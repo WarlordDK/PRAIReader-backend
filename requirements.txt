@@ -3,3 +3,7 @@ pydantic-settings
 fastapi
 uvicorn
 isort
+fitz
+pdf2image
+pymupdf
+python-multipart
