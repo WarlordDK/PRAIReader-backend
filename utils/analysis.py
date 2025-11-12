@@ -53,6 +53,7 @@ class PresentationAnalyzer:
                 "analysis_type": "ml_enhanced"
             }
 
+
         except Exception as e:
             print(f"ML анализ не удался, используем fallback: {e}")
             return self._get_fallback_analysis(text, image)
