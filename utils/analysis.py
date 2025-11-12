@@ -6,7 +6,6 @@ from PIL import Image
 from core.config import get_hf_token
 import asyncio
 
-
 class PresentationAnalyzer:
     def __init__(self):
         self.hf_token = get_hf_token()
