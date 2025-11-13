@@ -241,5 +241,4 @@ class TextAnalyzer:
         }
 
 
-# Глобальный экземпляр
 text_analyzer = TextAnalyzer()
