@@ -1,6 +1,6 @@
 import os
 import torch
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, T5ForConditionalGeneration
 from typing import Dict, Any, List
 from core.config import get_hf_token
 import asyncio
@@ -11,30 +11,46 @@ class TextAnalyzer:
     def __init__(self):
         self.hf_token = get_hf_token()
         self.model = None
+        self.tokenizer = None
         self.models_initialized = False
 
     async def initialize_models(self):
-        """Инициализация текстовой модели"""
+        """Инициализация правильной русскоязычной модели"""
         if self.models_initialized:
             return
 
-        print("🔄 Инициализация текстовой модели...")
+        print("🔄 Инициализация русскоязычной модели...")
 
         try:
-            # Используем маленькую но стабильную модель
-            self.model = pipeline(
+            # Используем модель которая точно работает с русским
+            model_name = "sberbank-ai/rugpt3small_based_on_gpt2"  # Русскоязычная GPT модель
+
+            self.pipeline = pipeline(
                 "text-generation",
-                model="distilgpt2",  # Надежная и быстрая модель
+                model=model_name,
+                tokenizer=model_name,
+                token=self.hf_token,
                 device="cpu",
                 torch_dtype=torch.float32,
             )
 
             self.models_initialized = True
-            print("✅ Текстовая модель инициализирована")
+            print("✅ Русскоязычная модель инициализирована")
 
         except Exception as e:
-            print(f"❌ Ошибка инициализации текстовой модели: {e}")
-            self.models_initialized = False
+            print(f"❌ Ошибка инициализации русскоязычной модели: {e}")
+            # Fallback на очень простую модель
+            try:
+                self.pipeline = pipeline(
+                    "text-generation",
+                    model="distilgpt2",
+                    device="cpu"
+                )
+                self.models_initialized = True
+                print("✅ Загружена резервная модель (английская)")
+            except Exception as fallback_error:
+                print(f"❌ Не удалось загрузить даже резервную модель: {fallback_error}")
+                self.models_initialized = False
 
     def analyze_text(self, text: str) -> Dict[str, Any]:
         """Анализ текста слайда"""
@@ -42,114 +58,154 @@ class TextAnalyzer:
             return self._get_fallback_analysis(text)
 
         try:
-            # Ограничиваем текст для избежания ошибок
-            short_text = text[:300]
+            # Очищаем текст
+            clean_text = self._clean_text(text)
 
-            # Получаем ответы от LLM
-            analysis = self._get_llm_analysis(short_text)
-            recommendations = self._get_llm_recommendations(short_text)
-            problems = self._get_llm_problems(short_text)
+            # Получаем анализ с улучшенными промтами
+            analysis = self._get_meaningful_analysis(clean_text)
+            recommendations = self._get_meaningful_recommendations(clean_text)
+            problems = self._get_meaningful_problems(clean_text)
 
             return {
-                "main_topic": self._extract_main_topic(text),
-                "key_points": self._extract_key_points(text),
-                "clarity_score": self._calculate_clarity_score(text),
-                "structure_quality": self._assess_structure(text),
+                "main_topic": self._extract_main_topic(clean_text),
+                "key_points": self._extract_key_points(clean_text),
+                "clarity_score": self._calculate_clarity_score(clean_text),
+                "structure_quality": self._assess_structure(clean_text),
                 "specific_recommendations": recommendations,
                 "problems_detected": problems,
                 "llm_analysis": analysis,
-                "analysis_type": "llm_enhanced"
+                "analysis_type": "russian_llm"
             }
 
         except Exception as e:
             print(f"Ошибка анализа текста: {e}")
             return self._get_fallback_analysis(text)
 
-    def _get_llm_analysis(self, text: str) -> str:
-        """Получение анализа от LLM"""
-        prompt = f"Проанализируй текст слайда: '{text}'. Основные идеи:"
-        return self._safe_llm_call(prompt, 80)
+    def _clean_text(self, text: str) -> str:
+        """Очистка текста"""
+        # Убираем лишние переносы и пробелы
+        text = re.sub(r'\n+', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()[:400]  # Ограничиваем длину
 
-    def _get_llm_recommendations(self, text: str) -> List[str]:
-        """Получение рекомендаций от LLM"""
-        prompt = f"Дай рекомендации по тексту слайда: '{text}'. Советы:"
-        response = self._safe_llm_call(prompt, 60)
-        return self._parse_list_response(response, "Улучшите ясность изложения")
+    def _get_meaningful_analysis(self, text: str) -> str:
+        """Получение осмысленного анализа"""
+        prompt = f"""
+        Текст слайда презентации: "{text}"
 
-    def _get_llm_problems(self, text: str) -> List[str]:
-        """Получение проблем от LLM"""
-        prompt = f"Какие проблемы в тексте слайда: '{text}'? Недостатки:"
-        response = self._safe_llm_call(prompt, 60)
-        return self._parse_list_response(response, "Проблемы не выявлены")
+        Кратко проанализируй этот текст. О чем он? Какая основная идея?
+        Анализ:
+        """
+        return self._safe_llm_call(prompt, 60)
+
+    def _get_meaningful_recommendations(self, text: str) -> List[str]:
+        """Получение осмысленных рекомендаций"""
+        prompt = f"""
+        Текст слайда: "{text}"
+
+        Дай 2 практические рекомендации по улучшению этого слайда. Будь конкретен.
+        Рекомендации:
+        1.
+        """
+        response = self._safe_llm_call(prompt, 80)
+        return self._parse_meaningful_list(response, "Улучшите структуру изложения")
+
+    def _get_meaningful_problems(self, text: str) -> List[str]:
+        """Получение осмысленных проблем"""
+        prompt = f"""
+        Текст слайда: "{text}"
+
+        Найди 2 основные проблемы в этом тексте для презентации.
+        Проблемы:
+        1.
+        """
+        response = self._safe_llm_call(prompt, 80)
+        return self._parse_meaningful_list(response, "Проверьте ясность изложения")
 
     def _safe_llm_call(self, prompt: str, max_tokens: int) -> str:
         """Безопасный вызов LLM"""
         try:
-            # Ограничиваем длину промта
-            if len(prompt) > 500:
-                prompt = prompt[:500]
+            # Делаем промт короче и четче
+            prompt = prompt.strip()[:600]
 
-            response = self.model(
+            response = self.pipeline(
                 prompt,
                 max_new_tokens=max_tokens,
                 num_return_sequences=1,
-                temperature=0.7,
+                temperature=0.3,  # Низкая температура для предсказуемости
                 do_sample=True,
                 pad_token_id=50256,
-                truncation=True
+                truncation=True,
+                repetition_penalty=1.3
             )
 
             if response and len(response) > 0:
                 generated_text = response[0]['generated_text']
-                # Убираем промпт из ответа
+
+                # Извлекаем только ответ
                 if prompt in generated_text:
-                    return generated_text.replace(prompt, "").strip()
-                return generated_text[:150].strip()  # Ограничиваем длину ответа
+                    response_text = generated_text.replace(prompt, "").strip()
+                else:
+                    response_text = generated_text.strip()
+
+                # Очищаем ответ
+                return self._clean_response(response_text)
+
             return ""
 
         except Exception as e:
-            print(f"Ошибка LLM call: {e}")
+            print(f"Ошибка LLM: {e}")
             return ""
 
-    def _parse_list_response(self, response: str, default: str) -> List[str]:
-        """Парсинг ответа в список"""
+    def _clean_response(self, text: str) -> str:
+        """Очистка ответа"""
+        # Убираем мусорные символы
+        text = re.sub(r'[^\w\sа-яА-ЯёЁ.,!?;:()-]', '', text)
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+
+    def _parse_meaningful_list(self, response: str, default: str) -> List[str]:
+        """Парсинг списка"""
         if not response:
             return [default]
 
-        # Разбиваем на пункты
-        lines = [line.strip() for line in response.split('.') if line.strip()]
-        items = []
+        lines = []
+        # Разбиваем по точкам, переносам, цифрам
+        for part in re.split(r'[\n\.]', response):
+            part = part.strip()
+            # Убираем номера и маркеры
+            clean_part = re.sub(r'^[\d\-•*]\.?\s*', '', part)
+            if clean_part and len(clean_part) > 15 and len(clean_part) < 100:
+                lines.append(clean_part)
 
-        for line in lines:
-            clean_line = re.sub(r'^[\d\-•*]\s*', '', line).strip()
-            if clean_line and len(clean_line) > 10 and len(clean_line) < 100:
-                items.append(clean_line)
-
-        return items[:2] if items else [default]
+        return lines[:2] if lines else [default]
 
     def _extract_main_topic(self, text: str) -> str:
-        """Извлечение основной темы"""
-        sentences = [s.strip() for s in text.split('.') if s.strip()]
+        """Извлечение темы"""
+        sentences = re.split(r'[.!?]+', text)
         if sentences:
-            first_sentence = sentences[0]
-            words = first_sentence.split()[:5]
-            return ' '.join(words) + ('...' if len(first_sentence) > len(' '.join(words)) else '')
+            first_sentence = sentences[0].strip()
+            if len(first_sentence) > 100:
+                return first_sentence[:100] + "..."
+            return first_sentence
         return "Тема не определена"
 
     def _extract_key_points(self, text: str) -> List[str]:
         """Извлечение ключевых пунктов"""
-        sentences = [s.strip() for s in text.split('.') if s.strip() and len(s.strip()) > 8]
-        return sentences[:2] if sentences else ["Информация представлена в тексте"]
+        sentences = re.split(r'[.!?]+', text)
+        clean_sentences = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 15]
+        return clean_sentences[:3] if clean_sentences else ["Информация представлена в тексте"]
 
     def _calculate_clarity_score(self, text: str) -> int:
         """Оценка ясности"""
         words = text.split()
-        sentences = [s for s in text.split('.') if s.strip()]
+        sentences = re.split(r'[.!?]+', text)
+        clean_sentences = [s for s in sentences if s.strip()]
 
-        if not sentences:
+        if not clean_sentences:
             return 3
 
-        avg_length = len(words) / len(sentences)
+        avg_length = len(words) / len(clean_sentences)
 
         if 10 <= avg_length <= 25:
             return 8
@@ -160,23 +216,26 @@ class TextAnalyzer:
 
     def _assess_structure(self, text: str) -> str:
         """Оценка структуры"""
-        sentences = [s for s in text.split('.') if s.strip()]
-        if len(sentences) >= 3:
+        sentences = re.split(r'[.!?]+', text)
+        clean_sentences = [s for s in sentences if s.strip()]
+
+        if len(clean_sentences) >= 3:
             return "хорошая"
-        elif len(sentences) >= 2:
+        elif len(clean_sentences) >= 2:
             return "базовая"
         else:
             return "минимальная"
 
     def _get_fallback_analysis(self, text: str) -> Dict[str, Any]:
         """Резервный анализ"""
+        clean_text = self._clean_text(text)
         return {
-            "main_topic": self._extract_main_topic(text),
-            "key_points": self._extract_key_points(text),
-            "clarity_score": self._calculate_clarity_score(text),
-            "structure_quality": self._assess_structure(text),
-            "specific_recommendations": ["Для детального анализа загрузите ML модель"],
-            "problems_detected": ["Анализ выполнен в базовом режиме"],
+            "main_topic": self._extract_main_topic(clean_text),
+            "key_points": self._extract_key_points(clean_text),
+            "clarity_score": self._calculate_clarity_score(clean_text),
+            "structure_quality": self._assess_structure(clean_text),
+            "specific_recommendations": ["Для детального анализа требуется русскоязычная модель"],
+            "problems_detected": ["Используется базовая обработка текста"],
             "llm_analysis": "Модель не загружена",
             "analysis_type": "fallback"
         }
