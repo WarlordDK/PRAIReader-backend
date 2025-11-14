@@ -15,15 +15,13 @@ class TextAnalyzer:
         self.models_initialized = False
 
     async def initialize_models(self):
-        """Инициализация правильной русскоязычной модели"""
         if self.models_initialized:
             return
 
-        print("Инициализация русскоязычной модели...")
+        print("Инициализация модели...")
 
         try:
-            # Используем модель которая точно работает с русским
-            model_name = "sberbank-ai/rugpt3small_based_on_gpt2"  # Русскоязычная GPT модель
+            model_name = "sberbank-ai/rugpt3small_based_on_gpt2"
 
             self.pipeline = pipeline(
                 "text-generation",
@@ -35,10 +33,10 @@ class TextAnalyzer:
             )
 
             self.models_initialized = True
-            print("Русскоязычная модель инициализирована")
+            print("Модель инициализирована")
 
         except Exception as e:
-            print(f"Ошибка инициализации русскоязычной модели: {e}")
+            print(f"Ошибка инициализации модели: {e}")
             # Fallback на очень простую модель
             try:
                 self.pipeline = pipeline(
@@ -47,7 +45,7 @@ class TextAnalyzer:
                     device="cpu"
                 )
                 self.models_initialized = True
-                print("Загружена резервная модель (английская)")
+                print("Загружена резервная модель")
             except Exception as fallback_error:
                 print(f"Не удалось загрузить даже резервную модель: {fallback_error}")
                 self.models_initialized = False
@@ -58,10 +56,8 @@ class TextAnalyzer:
             return self._get_fallback_analysis(text)
 
         try:
-            # Очищаем текст
             clean_text = self._clean_text(text)
 
-            # Получаем анализ с улучшенными промтами
             analysis = self._get_meaningful_analysis(clean_text)
             recommendations = self._get_meaningful_recommendations(clean_text)
             problems = self._get_meaningful_problems(clean_text)
@@ -125,14 +121,13 @@ class TextAnalyzer:
     def _safe_llm_call(self, prompt: str, max_tokens: int) -> str:
         """Безопасный вызов LLM"""
         try:
-            # Делаем промт короче и четче
             prompt = prompt.strip()[:600]
 
             response = self.pipeline(
                 prompt,
                 max_new_tokens=max_tokens,
                 num_return_sequences=1,
-                temperature=0.3,  # Низкая температура для предсказуемости
+                temperature=0.3,
                 do_sample=True,
                 pad_token_id=50256,
                 truncation=True,
@@ -159,7 +154,6 @@ class TextAnalyzer:
 
     def _clean_response(self, text: str) -> str:
         """Очистка ответа"""
-        # Убираем мусорные символы
         text = re.sub(r'[^\w\sа-яА-ЯёЁ.,!?;:()-]', '', text)
         text = re.sub(r'\s+', ' ', text)
         return text.strip()
@@ -170,10 +164,8 @@ class TextAnalyzer:
             return [default]
 
         lines = []
-        # Разбиваем по точкам, переносам, цифрам
         for part in re.split(r'[\n\.]', response):
             part = part.strip()
-            # Убираем номера и маркеры
             clean_part = re.sub(r'^[\d\-•*]\.?\s*', '', part)
             if clean_part and len(clean_part) > 15 and len(clean_part) < 100:
                 lines.append(clean_part)
