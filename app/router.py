@@ -30,50 +30,87 @@ async def root_info():
     }
 
 
+def _filter_slides_by_flags(slides_text, first_slide: bool, last_slide: bool):
+    """
+    slides_text: list of dicts {'slide_number': int, 'text': str, ...}
+    Возвращает (included_slides, excluded_slide_numbers)
+    included_slides — список словарей, которые попадут в анализ (в том же формате),
+    excluded_slide_numbers — список номеров исключённых слайдов.
+    """
+    if not slides_text:
+        return [], []
+
+    first_num = slides_text[0]['slide_number']
+    last_num = slides_text[-1]['slide_number']
+
+    excluded = set()
+    if not first_slide:
+        excluded.add(first_num)
+    if not last_slide:
+        excluded.add(last_num)
+
+    included = [s for s in slides_text if s['slide_number'] not in excluded]
+    return included, sorted(list(excluded))
+
+
 @router.post("/analyze/structure")
-async def analyze_presentation(file: UploadFile = File(...), use_rag: bool = False, user_context: str = ""):
+async def analyze_presentation(
+    file: UploadFile = File(...),
+    use_rag: bool = False,
+    user_context: str = "",
+    first_slide: bool = True,
+    last_slide: bool = True
+):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     try:
         pdf_path = pdf_reader.save_temp_pdf(file)
+        slides_text = pdf_reader.extract_text_by_slides(pdf_path)  # original list with numbers
 
-        slides_text = pdf_reader.extract_text_by_slides(pdf_path)
+        # фильтрация
+        included_slides, excluded_slide_numbers = _filter_slides_by_flags(slides_text, first_slide, last_slide)
 
+        # Собираем full_text таким образом, чтобы сохранять реальные номера слайдов (--- SLIDE N ---)
         full_text_blocks = []
-        for slide in slides_text:
+        for slide in included_slides:
             idx = slide.get("slide_number", "?")
             text = slide.get("text", "").strip()
             full_text_blocks.append(f"--- SLIDE {idx} ---\n{text}")
 
         full_text = "\n\n".join(full_text_blocks)
+        rag_output = "rag-система не использовалась"
 
         if use_rag and user_context:
             relevant_docs = rag_analyzer.query(user_context, top_k=3)
             context_text = "\n".join([d["text"] for d in relevant_docs])
             prompt_with_context = f"{context_text}\n\n{full_text}"
+            rag_output = rag_analyzer.query(prompt_with_context)
         else:
             prompt_with_context = full_text
 
         result = all_text_analyzer.analyze_full_text(prompt_with_context)
-        rag_output = rag_analyzer.query(prompt_with_context)
 
         os.unlink(pdf_path)
 
         return {
             "filename": file.filename,
-            "total_slides": len(slides_text),
+            "total_slides": len(slides_text),            # сохраняем общее количество слайдов
+            "excluded_slides": excluded_slide_numbers,   # список исключённых номеров (для фронта)
             "summary_report": result,
-            "rag_info" : rag_output
+            "rag_info": rag_output
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
-
 @router.post("/analyze/content")
-async def analyze_content(file: UploadFile = File(...)):
+async def analyze_content(
+    file: UploadFile = File(...),
+    first_slide: bool = True,
+    last_slide: bool = True
+):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
@@ -81,8 +118,10 @@ async def analyze_content(file: UploadFile = File(...)):
         pdf_path = pdf_reader.save_temp_pdf(file)
         slides_text = pdf_reader.extract_text_by_slides(pdf_path)
 
+        included_slides, excluded_slide_numbers = _filter_slides_by_flags(slides_text, first_slide, last_slide)
+
         full_text_blocks = []
-        for slide in slides_text:
+        for slide in included_slides:
             idx = slide.get("slide_number", "?")
             text = slide.get("text", "").strip()
             full_text_blocks.append(f"--- SLIDE {idx} ---\n{text}")
@@ -96,6 +135,7 @@ async def analyze_content(file: UploadFile = File(...)):
         return {
             "filename": file.filename,
             "total_slides": len(slides_text),
+            "excluded_slides": excluded_slide_numbers,
             "content_analysis": analysis
         }
 

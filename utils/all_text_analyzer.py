@@ -1,3 +1,5 @@
+# utils/all_text_analyzer.py
+
 import json
 import re
 from typing import Dict, Any, List, Optional
@@ -33,6 +35,8 @@ class AllTextAnalyzer:
         """
         Анализ всей презентации.
         Разбиваем текст на блоки, генерируем JSON для каждого блока, потом объединяем.
+        После объединения пытаемся автоматом сопоставить найденные weaknesses/recommendations
+        с номерами слайдов (если модель не указала их напрямую).
         """
         clean_text = self._normalize_full_text(full_text)
         if not self.models_initialized or not self.client:
@@ -55,6 +59,15 @@ class AllTextAnalyzer:
 
         # Объединяем результаты всех блоков
         combined = self._merge_block_results(block_results)
+
+        # Попытка сопоставить элементы с номерами слайдов по содержимому,
+        # только если модель сама не дала явные номера.
+        try:
+            combined = self._attach_slide_numbers_if_missing(combined, clean_text)
+        except Exception as e:
+            # не ломаем основной поток анализа, просто логируем
+            print(f"[AllTextAnalyzer] slide mapping warning: {e}")
+
         return combined
 
     # ---- блокировка слайдов -------------------------------------------------
@@ -131,6 +144,8 @@ class AllTextAnalyzer:
 
         for r in results[1:]:
             for key in ["strengths", "weaknesses", "recommendations"]:
+                # инициализация ключей если надо
+                combined.setdefault(key, [])
                 combined[key].extend(r.get(key, []))
             for key in ["clarity_score", "overall_quality_score"]:
                 combined[key] = int(round((combined.get(key, 0) + r.get(key, 0)) / 2))
@@ -148,24 +163,165 @@ class AllTextAnalyzer:
                              "style","audience_level","overall_quality_score","final_verdict"}
             if isinstance(data, dict) and expected_keys.issubset(set(data.keys())):
                 data["strengths"] = [str(x).strip() for x in data.get("strengths", [])][:5]
-                data["weaknesses"] = [str(x).strip() for x in data.get("weaknesses", [])][:5]
-                data["recommendations"] = [str(x).strip() for x in data.get("recommendations", [])][:6]
+                data["weaknesses"] = [str(x).strip() for x in data.get("weaknesses", [])][:20]
+                data["recommendations"] = [str(x).strip() for x in data.get("recommendations", [])][:20]
                 return data
         except json.JSONDecodeError:
             return None
         return None
 
+    # ============================================================
+    #  Postprocess: attach slide numbers if model didn't provide them
+    # ============================================================
+    def _attach_slide_numbers_if_missing(self, combined: Dict[str, Any], full_text: str) -> Dict[str, Any]:
+        """
+        Для каждого элемента в weaknesses/recommendations:
+         - если элемент уже в формате {'slide':N,'text':...} — пропускаем
+         - если строка содержит 'Слайд N' — парсим и превращаем в объект
+         - иначе пытаемся найти подходящий слайд(ы) по содержанию (ngram/search)
+        """
+        slides = self._split_into_slides(full_text)  # list of dicts: {'num': int, 'text': str}
+        combined = combined.copy()
+
+        for key in ("weaknesses", "recommendations"):
+            items = combined.get(key, [])
+            processed = []
+            for it in items:
+                # если уже объект со slide — пропускаем
+                if isinstance(it, dict) and ("slide" in it or "slides" in it):
+                    processed.append(it)
+                    continue
+                s = str(it).strip()
+                # 1) явный шаблон "Слайд N: ..."
+                m = re.match(r"Слайд\s*(\d+)\s*[:\-–]\s*(.+)", s, flags=re.IGNORECASE)
+                if m:
+                    processed.append({"slide": int(m.group(1)), "text": m.group(2).strip()})
+                    continue
+                # 2) шаблон "Слайды N, M: ..." или "Слайды N–M: ..."
+                m2 = re.match(r"Слайды\s*([\d,\s–\-]+)\s*[:\-–]\s*(.+)", s, flags=re.IGNORECASE)
+                if m2:
+                    nums = self._parse_slide_list(m2.group(1))
+                    processed.append({"slides": nums, "text": m2.group(2).strip()})
+                    continue
+                # 3) пробуем сопоставить по содержанию
+                mapped = self._map_text_to_slides_by_content(s, slides)
+                if mapped:
+                    # mapped — список номеров
+                    if len(mapped) == 1:
+                        processed.append({"slide": mapped[0], "text": s})
+                    else:
+                        processed.append({"slides": mapped, "text": s})
+                else:
+                    # ничего не найдено — оставляем строкой (фронтенд увидит, что нет номера)
+                    processed.append(s)
+            combined[key] = processed
+        return combined
+
+    def _split_into_slides(self, full_text: str) -> List[Dict[str, Any]]:
+        """
+        Разбивает full_text по маркерам '--- SLIDE N ---' в список словарей {'num':N,'text':...}
+        """
+        parts = re.split(r'--- SLIDE (\d+) ---', full_text)
+        slides = []
+        # parts: ['', '1', 'text1', '2', 'text2', ...] or maybe ['--- SLIDE 1 ---', ...] - handle robustly
+        i = 0
+        if len(parts) < 3:
+            # fallback: разбить по страницам как строки
+            lines = full_text.splitlines()
+            slides.append({"num": 1, "text": "\n".join(lines)})
+            return slides
+        # iterate in pairs
+        while i + 1 < len(parts):
+            # parts pattern we get when splitting with capture: [prefix, num, text, num, text,...]
+            # skip empty prefix possibly
+            if parts[i].strip() == "" and i + 2 < len(parts):
+                # parts[i+1] is number, parts[i+2] is text
+                num = int(parts[i+1])
+                text = parts[i+2]
+                slides.append({"num": num, "text": text.lower()})
+                i += 3
+            else:
+                # if starting differently
+                try:
+                    num = int(parts[i+1])
+                    text = parts[i+2] if i+2 < len(parts) else ""
+                    slides.append({"num": num, "text": text.lower()})
+                    i += 3
+                except Exception:
+                    break
+        if not slides:
+            slides.append({"num": 1, "text": full_text.lower()})
+        return slides
+
+    def _parse_slide_list(self, s: str) -> List[int]:
+        """
+        Парсит фрагменты вида "1, 2, 4–6" -> [1,2,4,5,6]
+        """
+        parts = re.split(r'[,\s]+', s.strip())
+        nums = []
+        for p in parts:
+            if not p:
+                continue
+            if "–" in p or "-" in p:
+                bounds = re.split(r'[–\-]', p)
+                try:
+                    a = int(bounds[0])
+                    b = int(bounds[1])
+                    nums.extend(list(range(a, b+1)))
+                except Exception:
+                    continue
+            else:
+                try:
+                    nums.append(int(p))
+                except Exception:
+                    continue
+        return sorted(set(nums))
+
+    def _map_text_to_slides_by_content(self, text: str, slides: List[Dict[str, Any]]) -> List[int]:
+        """
+        Попытка найти релевантные слайды по содержанию строки:
+         - сначала ищем длинные ngram'ы (6..3 слов),
+         - если не нашли — считаем пересечение значимых слов и выбираем топ-накопитель.
+        Возвращаем список найденных номеров (может быть пуст).
+        """
+        text_l = text.lower()
+        words = [w for w in re.findall(r'\w+', text_l) if len(w) > 2]
+        if not words:
+            return []
+
+        # try n-grams (long to short)
+        for n in range(min(6, len(words)), 2, -1):
+            ngrams = [" ".join(words[i:i+n]) for i in range(0, len(words)-n+1)]
+            for ng in ngrams:
+                for s in slides:
+                    if ng in s["text"]:
+                        return [s["num"]]
+
+        # если ngram не помог — простое совпадение слов
+        scores = []
+        slide_count = len(slides)
+        for s in slides:
+            slide_words = set(re.findall(r'\w+', s["text"]))
+            # count intersection of meaningful words
+            match_count = sum(1 for w in words if w in slide_words)
+            scores.append((s["num"], match_count))
+
+        # берём слайды с положительным совпадением, отсортированные по совпадениям
+        positive = [num for num, cnt in sorted(scores, key=lambda x: -x[1]) if cnt > 0]
+        # если слишком много совпадений — вернём топ-3
+        if positive:
+            return positive[:3]
+        return []
+
+    # ---- остальные fallback / вспомогательные методы -----------------------
     def _fallback_summary_from_text(self, raw_text: str, original_text: str) -> Dict[str, Any]:
         return {
             "main_topic": "Тема не определена",
             "goal": "Цель не определена",
             "summary": "Структурный анализ выполнен частично",
             "strengths": ["Стандартная структура слайдов"],
-            "weaknesses": ["Слайды 1-2: перегруженность текста", "Слайды 3-4: заголовки неявные"],
-            "recommendations": [
-                "Слайды 1-2: уменьшить количество текста",
-                "Слайды 3-4: добавить явные заголовки и разделители"
-            ],
+            "weaknesses": [{"slide": 1, "text": "Перегруженность текста"}],
+            "recommendations": [{"slide": 1, "text": "Уменьшить количество текста"}],
             "structure_quality": "средняя",
             "clarity_score": 5,
             "style": "общий",
