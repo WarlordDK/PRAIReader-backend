@@ -12,11 +12,13 @@ class ContentAnalyzer:
     Вход: текст всех слайдов с разделителями '--- SLIDE N ---'.
     """
 
-    def __init__(self):
+    def __init__(self, model_name, max_tokens, temperature):
         self.hf_token: Optional[str] = get_hf_token()
         self.client: Optional[InferenceClient] = None
-        self.model_name: str = "IlyaGusev/saiga_llama3_8b"
+        self.model_name: str = model_name
         self.models_initialized: bool = False
+        self.max_tokens = max_tokens
+        self.temperature = temperature
 
     async def initialize_models(self):
         if self.models_initialized:
@@ -43,7 +45,7 @@ class ContentAnalyzer:
             return self._fallback_summary(clean_text)
 
         prompt = self._build_prompt_for_content_analysis(clean_text)
-        raw = self._call_chat_model(prompt, max_tokens=800, temperature=0.0)
+        raw = self._call_chat_model(prompt, max_tokens=self.max_tokens, temperature=self.temperature)
 
         parsed = self._try_parse_json(raw)
         if parsed:
@@ -167,6 +169,3 @@ class ContentAnalyzer:
         t = text.strip()
         t = re.sub(r'[\x00-\x1f]+', ' ', t)
         return re.sub(r'\s+', ' ', t).strip()
-
-
-content_analyzer = ContentAnalyzer()

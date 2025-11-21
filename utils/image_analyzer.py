@@ -12,12 +12,12 @@ from core.config import get_hf_token
 
 class ImageAnalyzer:
 
-    def __init__(self):
+    def __init__(self, model_name):
         self.hf_token: Optional[str] = get_hf_token()
         self.vlm_client: Optional[InferenceClient] = None
         self.llm_client: Optional[InferenceClient] = None
 
-        self.caption_model = "Salesforce/blip2-flan-t5-xl"
+        self.caption_model = model_name
         self.reasoning_model = "IlyaGusev/saiga_llama3_8b"
 
         self.models_initialized = False
@@ -156,5 +156,3 @@ class ImageAnalyzer:
             "final_verdict": "Fallback"
         }
 
-
-image_analyzer = ImageAnalyzer()

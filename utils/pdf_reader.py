@@ -25,11 +25,11 @@ def extract_text(pdf_path):
 
 def pdf_to_images(pdf_path):
     try:
-        # # Указываем явный путь тулзы poppler, без docker-контейнера
-        # images = convert_from_path(pdf_path, poppler_path=POPPLER_PATH)
+        # Указываем явный путь тулзы poppler, без docker-контейнера
+        images = convert_from_path(pdf_path, poppler_path=POPPLER_PATH)
 
-        #При использовании docker-контейнера, тулза автоматически подключается
-        images = convert_from_path(pdf_path)
+        # #При использовании docker-контейнера, тулза автоматически подключается
+        # images = convert_from_path(pdf_path)
         return images
     except Exception as e:
         print(f"Error converting PDF to images: {e}")
