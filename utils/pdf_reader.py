@@ -28,7 +28,7 @@ def pdf_to_images(pdf_path):
         # # Указываем явный путь тулзы poppler, без docker-контейнера
         # images = convert_from_path(pdf_path, poppler_path=POPPLER_PATH)
 
-        #При использовании docker-контейнера, тулза автоматически подключается
+        #При использовании docker-контейнера, тулза автоматически подключается.
         images = convert_from_path(pdf_path)
         return images
     except Exception as e:
