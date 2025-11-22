@@ -1,5 +1,7 @@
 version: "3.9"
 
+name: praireader
+
 services:
   praireader:
     build:
@@ -13,3 +15,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
