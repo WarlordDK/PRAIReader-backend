@@ -145,7 +145,8 @@ class ContentAnalyzer:
             "summary": raw_text[:400] if raw_text else original_text[:400],
             "key_points": key_points[:5] or ["Ключевые моменты не определены"],
             "weaknesses": weaknesses[:5] or ["Недочёты не определены"],
-            "recommendations": recommendations[:5] or ["Рекомендации не определены"]
+            "recommendations": recommendations[:5] or ["Рекомендации не определены"],
+            "final_verdict": "Fallback"
         }
 
     def _fallback_summary(self, text: str) -> Dict[str, Any]:
@@ -155,7 +156,8 @@ class ContentAnalyzer:
             "summary": " ".join(sentences[:5]) or "Содержимое отсутствует",
             "key_points": sentences[:5] or ["Ключевые моменты не определены"],
             "weaknesses": ["Недочёты не определены"],
-            "recommendations": ["Рекомендации не определены"]
+            "recommendations": ["Рекомендации не определены"],
+            "final_verdict": "Fallback"
         }
 
     def _normalize_full_text(self, text: str) -> str:

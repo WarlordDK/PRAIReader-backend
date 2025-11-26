@@ -329,7 +329,7 @@ class AllTextAnalyzer:
             "style": "общий",
             "audience_level": "общая",
             "overall_quality_score": 5,
-            "final_verdict": "Режим fallback"
+            "final_verdict": "Fallback"
         }
 
     def _fallback_summary(self, text: str) -> Dict[str, Any]:
