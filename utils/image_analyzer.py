@@ -93,11 +93,11 @@ class ImageAnalyzer:
 
     def _build_global_prompt(self, slides: List[Dict[str, Any]]) -> str:
         example_json = {
-            "visual_strengths": ["Сильная композиция на слайде 1"],
-            "visual_weaknesses": ["Слайды 2, 5: слишком много текста"],
+            "strengths": ["Сильная композиция на слайде 1"],
+            "weaknesses": ["Слайды 2, 5: слишком много текста"],
             "recommendations": ["Уменьшить текст на слайдах 2 и 5"],
             "design_style": "Профессиональный, современный",
-            "visual_quality_score": 80,
+            "quality_score": 80,
             "final_verdict": "Презентация в целом хороша, есть мелкие недочёты"
         }
 
@@ -148,11 +148,11 @@ class ImageAnalyzer:
 
     def _fallback(self):
         return {
-            "visual_strengths": ["Невозможно выполнить анализ"],
-            "visual_weaknesses": ["Технический сбой"],
+            "strengths": ["Невозможно выполнить анализ"],
+            "weaknesses": ["Технический сбой"],
             "recommendations": ["Попробуйте позже"],
             "design_style": "неопределён",
-            "visual_quality_score": 5,
+            "quality_score": 5,
             "final_verdict": "Fallback"
         }
 
