@@ -120,7 +120,7 @@ async def analyze_presentation(
             "filename": file.filename,
             "total_slides": len(slides_text),
             "excluded_slides": excluded_slide_numbers,
-            "report": result,
+            "summary_report": result,
             "rag_info": rag_output
         }
 
@@ -173,7 +173,7 @@ async def analyze_content(
             "filename": file.filename,
             "total_slides": len(slides_text),
             "excluded_slides": excluded_slide_numbers,
-            "report": analysis
+            "content_analysis": analysis
         }
 
     except Exception as e:
@@ -213,7 +213,7 @@ async def analyze_visual(
         return {
             "filename": file.filename,
             "total_slides": len(slide_images),
-            "report": result
+            "visual_report": result
         }
 
     except Exception as e:

@@ -162,7 +162,7 @@ class AllTextAnalyzer:
             data = json.loads(t)
             expected_keys = {"main_topic","goal","summary","strengths","weaknesses",
                              "recommendations","structure_quality","clarity_score",
-                             "style","audience_level","overall_quality_score","final_verdict"}
+                             "style","audience_level","quality_score","final_verdict"}
             if isinstance(data, dict) and expected_keys.issubset(set(data.keys())):
                 data["strengths"] = [str(x).strip() for x in data.get("strengths", [])][:5]
                 data["weaknesses"] = [str(x).strip() for x in data.get("weaknesses", [])][:20]
@@ -328,8 +328,8 @@ class AllTextAnalyzer:
             "clarity_score": 5,
             "style": "общий",
             "audience_level": "общая",
-            "overall_quality_score": 5,
-            "final_verdict": "Fallback"
+            "quality_score": 5,
+            "final_verdict": "Режим fallback"
         }
 
     def _fallback_summary(self, text: str) -> Dict[str, Any]:
