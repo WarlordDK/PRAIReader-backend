@@ -8,7 +8,7 @@ QDRANT_URL = os.getenv('QDRANT_URL')
 QDRANT_API_KEY = os.getenv('QDRANT_API_KEY')
 
 llm_models_list = [{'id' : 1, 'model_name' : 'IlyaGusev/saiga_llama3_8b', 'dev_level' : 'hard'},
-               {'id' : 2, 'models_name' : 'distilgpt2', 'dev_level' : 'light'}]
+               {'id' : 2, 'model_name' : 'distilgpt2', 'dev_level' : 'light'}]
 
 vlm_models_list = [{'id' : 1, 'model_name' : 'Salesforce/blip2-flan-t5-xl', 'dev_level' : 'light'},
                    {'id' : 2, 'model_name' : 'microsoft/Florence-2-large', 'dev_level' : 'medium'},
